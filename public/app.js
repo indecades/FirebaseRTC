@@ -37,21 +37,39 @@ async function createRoom() {
 
   registerPeerConnectionListeners();
 
-  // Add code for creating a room here
+  const offer = await peerConnection.createOffer();
+await peerConnection.setLocalDescription(offer);
+const answer = await peerConnection.createAnswer();
+await peerConnection.setLocalDescription(answer);
+
+const roomWithOffer = {
+    offer: {
+        type: offer.type,
+        sdp: offer.sdp
+    }
+}
+await roomRef.update(roomWithAnswer);
+const roomRef = await db.collection('rooms').add(roomWithOffer);
+const roomId = roomRef.id;
+document.querySelector('#currentRoom').innerText = `Current room is ${roomId} - You are the caller!`
   
-  // Code for creating room above
+
   
   localStream.getTracks().forEach(track => {
     peerConnection.addTrack(track, localStream);
   });
 
-  // Code for creating a room below
 
-  // Code for creating a room above
-
-  // Code for collecting ICE candidates below
-
-  // Code for collecting ICE candidates above
+  roomRef.onSnapshot(async snapshot => {
+    console.log('Got updated room:', snapshot.data());
+    const data = snapshot.data();
+    if (!peerConnection.currentRemoteDescription && data.answer) {
+        console.log('Set remote description: ', data.answer);
+        const answer = new RTCSessionDescription(data.answer)
+        await peerConnection.setRemoteDescription(answer);
+    }
+});
+  
 
   peerConnection.addEventListener('track', event => {
     console.log('Got remote track:', event.streams[0]);
@@ -61,13 +79,28 @@ async function createRoom() {
     });
   });
 
-  // Listening for remote session description below
+  async function collectIceCandidates(roomRef, peerConnection,
+    localName, remoteName) {
+const candidatesCollection = roomRef.collection(localName);
 
-  // Listening for remote session description above
+peerConnection.addEventListener('icecandidate', event => {
+if (event.candidate) {
+const json = event.candidate.toJSON();
+candidatesCollection.add(json);
+}
+});
 
-  // Listen for remote ICE candidates below
 
-  // Listen for remote ICE candidates above
+roomRef.collection(remoteName).onSnapshot(snapshot => {
+snapshot.docChanges().forEach(change => {
+if (change.type === "added") {
+const candidate = new RTCIceCandidate(change.doc.data());
+peerConnection.addIceCandidate(candidate);
+}
+});
+})
+}
+
 }
 
 function joinRoom() {
@@ -99,9 +132,6 @@ async function joinRoomById(roomId) {
       peerConnection.addTrack(track, localStream);
     });
 
-    // Code for collecting ICE candidates below
-
-    // Code for collecting ICE candidates above
 
     peerConnection.addEventListener('track', event => {
       console.log('Got remote track:', event.streams[0]);
@@ -111,13 +141,6 @@ async function joinRoomById(roomId) {
       });
     });
 
-    // Code for creating SDP answer below
-
-    // Code for creating SDP answer above
-
-    // Listening for remote ICE candidates below
-
-    // Listening for remote ICE candidates above
   }
 }
 
@@ -158,7 +181,6 @@ async function hangUp(e) {
   document.querySelector('#hangupBtn').disabled = true;
   document.querySelector('#currentRoom').innerText = '';
 
-  // Delete room on hangup
   if (roomId) {
     const db = firebase.firestore();
     const roomRef = db.collection('rooms').doc(roomId);
@@ -197,3 +219,4 @@ function registerPeerConnectionListeners() {
 }
 
 init();
+
